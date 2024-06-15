@@ -17,6 +17,17 @@
 #error TIMER_FREQ <= 1000 recommended
 #endif
 
+/* 스레드들이 요청한 알람을 유지하는 Linked list
+   강의자료에 제시된 알람을 위한 구조체의 예를 활용하기 위해 그대로 가져온 것. */
+static struct list alarms;
+
+struct alram
+{
+  int64_t expiration;
+  struct thread *th;
+  struct list_elem elem;
+};
+
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
 
@@ -37,6 +48,8 @@ timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+
+  list_init (&alarms);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
