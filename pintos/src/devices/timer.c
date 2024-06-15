@@ -92,6 +92,9 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
+
+  // TODO: 알람을 해당 스레드와 함께 리스트에 매단 후, thread_block()을 호출, 해당 스레드를 블록시킨다.
+
   while (timer_elapsed (start) < ticks)
     thread_yield ();
 }
@@ -172,6 +175,10 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
+
+  // TODO: 강의자료의 timer_handler()가 이것을 나타내는 것 같다.
+  //       매 틱 발생 시마다 인터럽트 처리과정에서 alarm 리스트 중 시간이 만료된 알람이 있는지 검사하고,
+  //       만료된 알람이 있는 경우, 알람은 리스트에서 제거하고 해당 스레드는 thread_unblock()을 호출, 스레드를 깨운다.
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
