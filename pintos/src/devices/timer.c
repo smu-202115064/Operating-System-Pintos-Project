@@ -112,7 +112,9 @@ timer_sleep (int64_t ticks)
   // TODO: 정렬된 상태를 유지하면서 삽입하기.
   list_push_back (&alarms, &new_alarm->elem);
 
+  intr_disable ();
   thread_block();
+  intr_enable ();
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
