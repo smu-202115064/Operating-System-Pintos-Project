@@ -41,6 +41,7 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
+static void alarm_create (int64_t expiration, struct thread *th);
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
@@ -105,15 +106,8 @@ timer_sleep (int64_t ticks)
 {
   ASSERT (intr_get_level () == INTR_ON);
 
-  // 알람을 해당 스레드와 함께 리스트에 매단 후, thread_block()을 호출, 해당 스레드를 블록시킨다.
-  struct alram *new_alarm = malloc (sizeof (struct alram));
-  new_alarm->expiration = timer_ticks () + ticks;
-  new_alarm->th = thread_current ();
-
-  // TODO: 정렬된 상태를 유지하면서 삽입하기.
-  list_push_back (&alarms, &new_alarm->elem);
-
   intr_disable ();
+  alarm_create (timer_ticks () + ticks, thread_current ());
   thread_block();
   intr_enable ();
 }
@@ -188,7 +182,8 @@ timer_print_stats (void)
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
 
-/* Timer interrupt handler. */
+/* Timer interrupt handler.
+  강의자료의 timer_handler()가 이것을 나타내는 것 같다. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
@@ -279,4 +274,20 @@ real_time_delay (int64_t num, int32_t denom)
      the possibility of overflow. */
   ASSERT (denom % 1000 == 0);
   busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000));
+}
+
+/* 알람을 만들어 리스트에 삽입하는 함수.
+   expiration: 만료 시간, th: 해당 스레드 */
+static void
+alarm_create (int64_t expiration, struct thread *th)
+{
+  struct alram *alarm;
+
+  ASSERT (th != NULL);
+
+  alarm = malloc (sizeof (struct alram));
+  alarm->expiration = expiration;
+  alarm->th = th;
+
+  list_push_back (&alarms, &alarm->elem); // TODO: 정렬된 상태를 유지하면서 삽입하기.
 }
