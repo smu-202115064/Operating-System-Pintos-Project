@@ -42,6 +42,7 @@ static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
 static void alarm_create (int64_t expiration, struct thread *th);
+static void alarm_interrupt (void);
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
@@ -190,19 +191,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   thread_tick ();
 
-  /* 강의자료의 timer_handler()가 이것을 나타내는 것 같다.
-    매 틱 발생 시마다 인터럽트 처리과정에서 alarm 리스트 중 시간이 만료된 알람이 있는지 검사하고,
-    만료된 알람이 있는 경우, 알람은 리스트에서 제거하고 해당 스레드는 thread_unblock()을 호출, 스레드를 깨운다. */
-  struct list_elem *e;
-  for (e = list_begin (&alarms); e != list_end (&alarms); e = list_next (e))
-  {
-    struct alram *alarm = list_entry (e, struct alram, elem);
-    if (alarm->expiration <= ticks)
-    {
-      list_remove (e);
-      thread_unblock (alarm->th);
-    }
-  }
+  alarm_interrupt();
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
@@ -290,4 +279,24 @@ alarm_create (int64_t expiration, struct thread *th)
   alarm->th = th;
 
   list_push_back (&alarms, &alarm->elem); // TODO: 정렬된 상태를 유지하면서 삽입하기.
+}
+
+/* alarm 리스트 중 시간이 만료된 알람이 있는지 검사하고,
+  만료된 알람이 있는 경우 해당 알람을 리스트에서 제거한다.
+  제거된 스레드는 thread_unblock()을 호출하여 깨운다 */
+static void
+alarm_interrupt (void)
+{
+  struct list_elem *e;
+
+  for (e = list_begin (&alarms); e != list_end (&alarms); e = list_next (e))
+  {
+    struct alram *alarm = list_entry (e, struct alram, elem);
+    if (alarm->expiration <= ticks)
+    {
+      list_remove (e);
+      thread_unblock (alarm->th);
+      // free (alarm);
+    }
+  }
 }
