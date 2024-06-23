@@ -18,16 +18,16 @@
 #error TIMER_FREQ <= 1000 recommended
 #endif
 
-/* 스레드들이 요청한 알람을 유지하는 Linked list
-   강의자료에 제시된 알람을 위한 구조체의 예를 활용하기 위해 그대로 가져온 것. */
-static struct list alarms;
-
 struct alram
-{
-  int64_t expiration;
-  struct thread *th;
-  struct list_elem elem;
-};
+  {
+    int64_t expiration;
+    struct thread *th;
+    struct list_elem elem;
+  };
+
+/* List of processes in THREAD_BLOCKED state, that is, processes
+   that are blocked by timer_sleep() and waiting for its expiration. */
+static struct list sleep_list;
 
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
@@ -41,8 +41,6 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
-static void alarm_create (int64_t expiration, struct thread *th);
-static void alarm_interrupt (void);
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
@@ -52,7 +50,7 @@ timer_init (void)
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 
-  list_init (&alarms);
+  list_init (&sleep_list);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -105,11 +103,19 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks)
 {
+  struct alram *alarm;
+
   ASSERT (intr_get_level () == INTR_ON);
 
   intr_disable ();
-  alarm_create (timer_ticks () + ticks, thread_current ());
+
+  alarm = (struct alram *) malloc (sizeof (struct alram));
+  alarm->expiration = timer_ticks () + ticks;
+  alarm->th = thread_current ();
+  // TODO: 정렬된 상태를 유지하면서 삽입하기.
+  list_push_back (&sleep_list, &alarm->elem);
   thread_block();
+
   intr_enable ();
 }
 
@@ -183,15 +189,26 @@ timer_print_stats (void)
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
 
-/* Timer interrupt handler.
-  강의자료의 timer_handler()가 이것을 나타내는 것 같다. */
+/* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
+  struct list_elem *e;
+  struct alram *alarm;
+
   ticks++;
   thread_tick ();
 
-  alarm_interrupt();
+  for (e = list_begin (&sleep_list); e != list_end (&sleep_list); e = list_next (e))
+  {
+    alarm = list_entry (e, struct alram, elem);
+    if (alarm->expiration <= ticks)
+    {
+      list_remove (e);
+      thread_unblock (alarm->th);
+      // free (alarm);
+    }
+  }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
@@ -263,40 +280,4 @@ real_time_delay (int64_t num, int32_t denom)
      the possibility of overflow. */
   ASSERT (denom % 1000 == 0);
   busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000));
-}
-
-/* 알람을 만들어 리스트에 삽입하는 함수.
-   expiration: 만료 시간, th: 해당 스레드 */
-static void
-alarm_create (int64_t expiration, struct thread *th)
-{
-  struct alram *alarm;
-
-  ASSERT (th != NULL);
-
-  alarm = malloc (sizeof (struct alram));
-  alarm->expiration = expiration;
-  alarm->th = th;
-
-  list_push_back (&alarms, &alarm->elem); // TODO: 정렬된 상태를 유지하면서 삽입하기.
-}
-
-/* alarm 리스트 중 시간이 만료된 알람이 있는지 검사하고,
-  만료된 알람이 있는 경우 해당 알람을 리스트에서 제거한다.
-  제거된 스레드는 thread_unblock()을 호출하여 깨운다 */
-static void
-alarm_interrupt (void)
-{
-  struct list_elem *e;
-
-  for (e = list_begin (&alarms); e != list_end (&alarms); e = list_next (e))
-  {
-    struct alram *alarm = list_entry (e, struct alram, elem);
-    if (alarm->expiration <= ticks)
-    {
-      list_remove (e);
-      thread_unblock (alarm->th);
-      // free (alarm);
-    }
-  }
 }
