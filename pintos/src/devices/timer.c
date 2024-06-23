@@ -37,6 +37,7 @@ static int64_t ticks;
 static unsigned loops_per_tick;
 
 static intr_handler_func timer_interrupt;
+static list_less_func alarm_less;
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
@@ -112,8 +113,7 @@ timer_sleep (int64_t ticks)
   alarm = (struct alram *) malloc (sizeof (struct alram));
   alarm->expiration = timer_ticks () + ticks;
   alarm->th = thread_current ();
-  // TODO: 정렬된 상태를 유지하면서 삽입하기.
-  list_push_back (&sleep_list, &alarm->elem);
+  list_insert_ordered (&sleep_list, &alarm->elem, alarm_less, NULL);
   thread_block();
 
   intr_enable ();
@@ -199,15 +199,18 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   thread_tick ();
 
-  for (e = list_begin (&sleep_list); e != list_end (&sleep_list); e = list_next (e))
+  while (!list_empty(&sleep_list))
   {
+    e = list_begin (&sleep_list);
     alarm = list_entry (e, struct alram, elem);
-    if (alarm->expiration <= ticks)
-    {
-      list_remove (e);
-      thread_unblock (alarm->th);
-      // free (alarm);
-    }
+
+    if (alarm->expiration > ticks)
+      break;
+
+    list_pop_front (&sleep_list);
+    thread_unblock (alarm->th);
+
+    // free (alarm);
   }
 }
 
@@ -280,4 +283,12 @@ real_time_delay (int64_t num, int32_t denom)
      the possibility of overflow. */
   ASSERT (denom % 1000 == 0);
   busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000));
+}
+
+static bool
+alarm_less (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+  struct alram *alarm_a = list_entry (a, struct alram, elem);
+  struct alram *alarm_b = list_entry (b, struct alram, elem);
+  return alarm_a->expiration < alarm_b->expiration;
 }
