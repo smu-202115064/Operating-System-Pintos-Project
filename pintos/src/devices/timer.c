@@ -210,6 +210,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
     list_pop_front (&sleep_list);
     thread_unblock (alarm->th);
 
+    // TODO: 어째서 free를 해주면 에러(system panic)가 발생하는지 알아보기.
     // free (alarm);
   }
 }
